@@ -6,4 +6,22 @@
 // (R0, R1, R2 refer to RAM[0], RAM[1], and RAM[2], respectively.)
 // The algorithm is based on repetitive addition.
 
-//// Replace this comment with your code.
+@0
+D=M
+@counter
+M=D
+@2
+M=0
+(LOOP) @counter
+D=M
+@12345
+D;JEQ
+@1
+D=M
+@2
+M=D+M
+@counter
+M=M-1
+@LOOP
+0;JMP
+

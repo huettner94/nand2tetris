@@ -1,6 +1,7 @@
 // This file is part of www.nand2tetris.org
 // and the book "The Elements of Computing Systems"
 // by Nisan and Schocken, MIT Press.
+// File name: projects/5/CPU.hdl
 /**
  * The Hack Central Processing unit (CPU).
  * Parses the binary code in the instruction input and executes it according to the
@@ -31,5 +32,35 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-	//// Replace this comment with your code.
+    Not(in=instruction[15],out=isainstruction);
+
+    Or(a=isainstruction, b=instruction[5] , out=loada);
+    And(a=instruction[15], b=instruction[4], out=loadd);
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    Mux16(a=aluout , b=instruction , sel=isainstruction , out=aregin );
+
+    ARegister(in=aregin , load=loada , out=aout );
+    DRegister(in=aluout , load=loadd , out=dout );
+    Mux16(a=aout , b=inM, sel=instruction[12] , out=amout );
+	ALU(x=dout , y=amout , zx=instruction[11] , nx=instruction[10] , zy=instruction[9] , ny=instruction[8] , f=instruction[7] , no=instruction[6] , out=aluout , zr=iszero , ng=isneg );
+
+    And(a=isneg, b=instruction[2], out=jumplt);
+    And(a=iszero, b=instruction[1], out=jumpeq);
+    Or(a=isneg, b=iszero, out=nispos);
+    Not(in=nispos,out=ispos);
+    And(a=ispos, b=instruction[0], out=jumpgt);
+    Or(a=jumplt, b=jumpeq, out=jump1);
+    Or(a=jump1 , b=jumpgt , out=couldjump );
+    And(a=couldjump, b=instruction[15], out=jump);
+
+    Mux16(a=aout, b=false, sel=reset, out=pcloadin);
+    Or(a=jump , b=reset , out=loadpc );
+    Inc16(in=pcout , out=pcinc );
+    Mux16(a=pcinc, b=pcloadin, sel=loadpc, out=pcin);
+    Register(in=pcin, load=true, out=pcout);
+
+    Or16(a=pcout, b=false, out[0..14]=pc);
+    Or16(a=aout, b=false, out[0..14]=addressM);
+    Or16(a=aluout, b=false, out=outM);
 }
