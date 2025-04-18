@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
 
 use bitflags::bitflags;
 
@@ -190,10 +190,21 @@ impl Compute {
     }
 }
 
+type Label = String;
+
+#[derive(Debug)]
+pub enum LoadData {
+    Data(u16),
+    Label(Label),
+}
+
 #[derive(Debug)]
 pub enum Instruction {
+    Label {
+        label: Label,
+    },
     Load {
-        data: u16,
+        data: LoadData,
     },
     Command {
         compute: Compute,
@@ -204,21 +215,36 @@ pub enum Instruction {
 
 impl Instruction {
     fn from_str(value: &str) -> Result<Option<Self>, String> {
-        let value = value.trim();
+        // Strip comments and emptylines
+        let mut value = value.trim();
         if value.is_empty() || value.starts_with("//") {
             return Ok(None);
         }
-        if value.starts_with("@") {
-            let num = value[1..].parse().unwrap();
-            if num > (u16::MAX >> 1) {
-                return Err("Value {num} is too large to be represented.".to_string());
-            }
-            return Ok(Some(Instruction::Load { data: num }));
-        }
-        if value.starts_with("(") {
-            return Err("Labels not yet implemented.".to_string());
+        if let Some((newval, _)) = value.split_once("//") {
+            value = newval.trim();
         }
 
+        // Load
+        if value.starts_with("@") {
+            let data = if value.chars().nth(1).unwrap().is_ascii_digit() {
+                let num = value[1..].parse().unwrap();
+                if num > (u16::MAX >> 1) {
+                    return Err("Value {num} is too large to be represented.".to_string());
+                }
+                LoadData::Data(num)
+            } else {
+                LoadData::Label(value[1..].to_string())
+            };
+            return Ok(Some(Instruction::Load { data }));
+        }
+
+        // Label
+        if value.starts_with("(") {
+            let label = value.trim_matches(['(', ')']).to_string();
+            return Ok(Some(Instruction::Label { label }));
+        }
+
+        // C Instruction
         let (target, rest) = if let Some((t, rest)) = value.split_once("=") {
             (t.try_into()?, rest)
         } else {
@@ -238,14 +264,18 @@ impl Instruction {
         }))
     }
 
-    fn compile(&self) -> u16 {
+    fn compile(&self, ls: &mut LabelStore) -> Option<u16> {
         match self {
-            Instruction::Load { data } => data & 0x7FFF,
+            Instruction::Label { label: _ } => None,
+            Instruction::Load { data: ld } => match ld {
+                LoadData::Data(data) => Some(data & 0x7FFF),
+                LoadData::Label(label) => Some(ls.get(label) & 0x7FFF),
+            },
             Instruction::Command {
                 compute,
                 target,
                 jump,
-            } => 0xE000 | compute.compile() | target.compile() | jump.compile(),
+            } => Some(0xE000 | compute.compile() | target.compile() | jump.compile()),
         }
     }
 }
@@ -269,8 +299,88 @@ impl Assembly {
         Self { instructions }
     }
 
-    pub fn compile(self) -> CodeType {
-        let instructions = self.instructions.iter().map(|i| i.compile()).collect();
-        CodeType::Hex(Hex { instructions })
+    pub fn compile(self) -> Result<CodeType, String> {
+        let mut ls = LabelStore::new();
+
+        let mut ic: u16 = 0;
+        for instruction in &self.instructions {
+            match instruction {
+                Instruction::Label { label } => {
+                    ls.insert(label, ic)?;
+                }
+                Instruction::Load { data: _ }
+                | Instruction::Command {
+                    compute: _,
+                    target: _,
+                    jump: _,
+                } => ic += 1,
+            }
+        }
+
+        let instructions = self
+            .instructions
+            .iter()
+            .flat_map(|i| i.compile(&mut ls))
+            .collect();
+        Ok(CodeType::Hex(Hex { instructions }))
+    }
+}
+
+#[derive(Debug)]
+struct LabelStore {
+    labels: HashMap<String, u16>,
+    nextindex: u16,
+}
+
+impl LabelStore {
+    fn new() -> LabelStore {
+        let hm: HashMap<String, u16> = [
+            ("SP", 0),
+            ("LCL", 1),
+            ("ARG", 2),
+            ("THIS", 3),
+            ("THAT", 4),
+            ("R0", 0),
+            ("R1", 1),
+            ("R2", 2),
+            ("R3", 3),
+            ("R4", 4),
+            ("R5", 5),
+            ("R6", 6),
+            ("R7", 7),
+            ("R8", 8),
+            ("R9", 9),
+            ("R10", 10),
+            ("R11", 11),
+            ("R12", 12),
+            ("R13", 13),
+            ("R14", 14),
+            ("R15", 15),
+            ("SCREEN", 0x4000),
+            ("KBD", 0x6000),
+        ]
+        .into_iter()
+        .map(|(e1, e2)| (e1.to_string(), e2))
+        .collect();
+        LabelStore {
+            labels: hm,
+            nextindex: 16,
+        }
+    }
+
+    fn get(&mut self, key: &str) -> u16 {
+        *self.labels.entry(key.to_string()).or_insert_with(|| {
+            let r = self.nextindex;
+            self.nextindex += 1;
+            r
+        })
+    }
+
+    fn insert(&mut self, key: &str, value: u16) -> Result<(), String> {
+        if self.labels.contains_key(key) {
+            return Err(format!("Key '{}' already exists", key));
+        }
+        self.labels.insert(key.to_string(), value);
+        Ok(())
     }
 }

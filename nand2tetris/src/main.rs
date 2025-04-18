@@ -59,7 +59,7 @@ fn main() {
     );
     let code = load_file(&args.file, filetype);
     let basepath = args.file.clone().with_extension("");
-    code.compile(basepath);
+    code.compile(basepath).unwrap();
 }
 
 pub enum CodeType {
@@ -74,13 +74,14 @@ fn load_file(file: &PathBuf, filetype: FileType) -> CodeType {
 }
 
 impl CodeType {
-    fn compile(self, basepath: PathBuf) {
+    fn compile(self, basepath: PathBuf) -> Result<(), String> {
         let out = match self {
-            CodeType::Assembly(v) => v.compile(),
-            CodeType::Hex(_) => return,
+            CodeType::Assembly(v) => v.compile()?,
+            CodeType::Hex(_) => return Ok(()),
         };
         out.write(&basepath);
-        out.compile(basepath);
+        out.compile(basepath)?;
+        Ok(())
     }
 
     fn write(&self, basepath: &PathBuf) {
