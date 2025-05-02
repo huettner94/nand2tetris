@@ -36,7 +36,7 @@ impl Target {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Jump {
     NONE,
     JGT,
@@ -81,7 +81,7 @@ impl Jump {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Compute {
     Zero,
     One,
@@ -192,13 +192,19 @@ impl Compute {
 
 type Label = String;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoadData {
     Data(u16),
     Label(Label),
 }
 
-#[derive(Debug)]
+impl LoadData {
+    pub fn label(str: &str) -> LoadData {
+        LoadData::Label(str.to_string())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Label {
         label: Label,
@@ -286,16 +292,22 @@ pub struct Assembly {
 }
 
 impl Assembly {
-    pub fn from_file(path: &PathBuf) -> Self {
+    pub fn from_file(path: &PathBuf) -> Result<Self, String> {
         let mut stringbuf = String::new();
         File::open(&path)
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .read_to_string(&mut stringbuf)
-            .unwrap();
-        let instructions = stringbuf
+            .map_err(|e| e.to_string())?;
+        let instructions: Result<Vec<Instruction>, String> = stringbuf
             .lines()
-            .flat_map(|e| Instruction::from_str(e).unwrap())
+            .flat_map(|e| Instruction::from_str(e).transpose())
             .collect();
+        Ok(Self {
+            instructions: instructions?,
+        })
+    }
+
+    pub fn from_instructions(instructions: Vec<Instruction>) -> Self {
         Self { instructions }
     }
 

@@ -6,16 +6,17 @@ pub struct Hex {
 
 impl Hex {
     pub fn write(&self, mut basepath: PathBuf) {
-        basepath.set_extension("hex");
+        basepath.set_extension("hack");
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
-            .open(basepath)
+            .open(basepath.clone())
             .unwrap();
         for instr in &self.instructions {
             file.write(format!("{:0>16b}\n", instr).as_bytes()).unwrap();
         }
         file.flush().unwrap();
+        println!("Written output to {}", basepath.to_str().unwrap());
     }
 }
