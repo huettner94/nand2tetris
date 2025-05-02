@@ -49,6 +49,20 @@ enum Statement {
 }
 
 impl Statement {
+    fn set_d(val: u16) -> Vec<Instruction> {
+        [
+            Instruction::Load {
+                data: LoadData::Data(val),
+            },
+            Instruction::Command {
+                compute: Compute::A,
+                target: Target::D,
+                jump: Jump::NONE,
+            },
+        ]
+        .to_vec()
+    }
+
     fn push_d() -> Vec<Instruction> {
         [
             Instruction::Load {
@@ -95,40 +109,92 @@ impl Statement {
         .to_vec()
     }
 
-    fn compile(&self) -> Vec<Instruction> {
-        match self {
-            Statement::Not => todo!(),
-            Statement::And => todo!(),
-            Statement::Or => todo!(),
-            Statement::Neg => todo!(),
-            Statement::Add => {
-                let mut out = Statement::pop(Target::D);
-                out.append(&mut Statement::pop(Target::A));
-                out.extend([Instruction::Command {
-                    compute: Compute::DplusA,
+    fn cmp(lg: &mut LabelGenerator, jmp: Jump) -> Vec<Instruction> {
+        let truelabel = lg.next_statement();
+        let endlabel = lg.next_statement();
+        let mut out = Statement::pop(Target::D);
+        out.append(&mut Self::pop(Target::A));
+        out.extend(
+            [
+                Instruction::Command {
+                    compute: Compute::AminD,
                     target: Target::D,
                     jump: Jump::NONE,
-                }]);
-                out.append(&mut Statement::push_d());
-                out
-            }
-            Statement::Sub => todo!(),
-            Statement::Eq => todo!(),
-            Statement::Lt => todo!(),
-            Statement::Gt => todo!(),
+                },
+                Instruction::Load {
+                    data: LoadData::label(&truelabel),
+                },
+                Instruction::Command {
+                    compute: Compute::D,
+                    target: Target::empty(),
+                    jump: jmp,
+                },
+            ]
+            .to_vec(),
+        );
+        out.append(&mut Self::set_d(0));
+        out.extend(
+            [
+                Instruction::Load {
+                    data: LoadData::label(&endlabel),
+                },
+                Instruction::Command {
+                    compute: Compute::A,
+                    target: Target::empty(),
+                    jump: Jump::JMP,
+                },
+                Instruction::label(&truelabel),
+                // This loads -1 to D
+                Instruction::Command {
+                    compute: Compute::NegOne,
+                    target: Target::D,
+                    jump: Jump::NONE,
+                },
+            ]
+            .to_vec(),
+        );
+        out.extend([Instruction::label(&endlabel)].to_vec());
+        out.append(&mut Self::push_d());
+        out
+    }
+
+    fn compute2(compute: Compute) -> Vec<Instruction> {
+        let mut out = Statement::pop(Target::D);
+        out.append(&mut Self::pop(Target::A));
+        out.extend([Instruction::Command {
+            compute,
+            target: Target::D,
+            jump: Jump::NONE,
+        }]);
+        out.append(&mut Self::push_d());
+        out
+    }
+
+    fn compute1(compute: Compute) -> Vec<Instruction> {
+        let mut out = Statement::pop(Target::D);
+        out.extend([Instruction::Command {
+            compute,
+            target: Target::D,
+            jump: Jump::NONE,
+        }]);
+        out.append(&mut Self::push_d());
+        out
+    }
+
+    fn compile(&self, lg: &mut LabelGenerator) -> Vec<Instruction> {
+        match self {
+            Statement::Not => Self::compute1(Compute::NotD),
+            Statement::And => Self::compute2(Compute::DandA),
+            Statement::Or => Self::compute2(Compute::DorA),
+            Statement::Neg => Self::compute1(Compute::NegD),
+            Statement::Add => Self::compute2(Compute::DplusA),
+            Statement::Sub => Self::compute2(Compute::AminD),
+            Statement::Eq => Self::cmp(lg, Jump::JEQ),
+            Statement::Lt => Self::cmp(lg, Jump::JLT),
+            Statement::Gt => Self::cmp(lg, Jump::JGT),
             Statement::Push(PushSource::Constant, i) => {
-                let mut out = [
-                    Instruction::Load {
-                        data: LoadData::Data(*i),
-                    },
-                    Instruction::Command {
-                        compute: Compute::A,
-                        target: Target::D,
-                        jump: Jump::NONE,
-                    },
-                ]
-                .to_vec();
-                out.append(&mut Statement::push_d());
+                let mut out = Statement::set_d(*i);
+                out.append(&mut Self::push_d());
                 out
             }
             Statement::Push(push_source, _) => todo!(),
@@ -174,6 +240,7 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Statement>> {
 #[derive(Debug)]
 pub struct VM {
     ast: Vec<Statement>,
+    label_generator: LabelGenerator,
 }
 
 impl VM {
@@ -190,16 +257,40 @@ impl VM {
         }
         Ok(VM {
             ast: out.output().unwrap().clone(),
+            label_generator: LabelGenerator::new(path),
         })
     }
 
-    pub fn compile(self) -> Result<CodeType, String> {
+    pub fn compile(mut self) -> Result<CodeType, String> {
         let mut out = Vec::new();
 
         for statement in self.ast {
-            out.append(&mut statement.compile());
+            out.append(&mut statement.compile(&mut self.label_generator));
         }
 
         Ok(CodeType::Assembly(Assembly::from_instructions(out)))
+    }
+}
+
+#[derive(Debug)]
+struct LabelGenerator {
+    filename: String,
+    last_var: u16,
+    last_statement: u16,
+}
+
+impl LabelGenerator {
+    fn new(filename: &PathBuf) -> Self {
+        LabelGenerator {
+            filename: filename.to_str().unwrap().to_string(),
+            last_var: 0,
+            last_statement: 0,
+        }
+    }
+
+    fn next_statement(&mut self) -> String {
+        let val = self.last_statement;
+        self.last_statement += 1;
+        format!("{}-stmt-{}", &self.filename, val)
     }
 }

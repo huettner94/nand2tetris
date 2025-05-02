@@ -270,6 +270,12 @@ impl Instruction {
         }))
     }
 
+    pub fn label(str: &str) -> Instruction {
+        Instruction::Label {
+            label: str.to_string(),
+        }
+    }
+
     fn compile(&self, ls: &mut LabelStore) -> Option<u16> {
         match self {
             Instruction::Label { label: _ } => None,
