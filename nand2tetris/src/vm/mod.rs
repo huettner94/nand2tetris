@@ -160,13 +160,21 @@ impl Statement {
 
     fn compute2(compute: Compute) -> Vec<Instruction> {
         let mut out = Statement::pop(Target::D);
-        out.append(&mut Self::pop(Target::A));
-        out.extend([Instruction::Command {
-            compute,
-            target: Target::D,
-            jump: Jump::NONE,
-        }]);
-        out.append(&mut Self::push_d());
+        out.extend([
+            Instruction::Load {
+                data: LoadData::label("SP"),
+            },
+            Instruction::Command {
+                compute: Compute::MminOne,
+                target: Target::A,
+                jump: Jump::NONE,
+            },
+            Instruction::Command {
+                compute,
+                target: Target::M,
+                jump: Jump::NONE,
+            },
+        ]);
         out
     }
 
@@ -192,11 +200,11 @@ impl Statement {
     fn compile(&self, lg: &mut LabelGenerator) -> Vec<Instruction> {
         match self {
             Statement::Not => Self::compute1(Compute::NotM),
-            Statement::And => Self::compute2(Compute::DandA),
-            Statement::Or => Self::compute2(Compute::DorA),
+            Statement::And => Self::compute2(Compute::DandM),
+            Statement::Or => Self::compute2(Compute::DorM),
             Statement::Neg => Self::compute1(Compute::NegM),
-            Statement::Add => Self::compute2(Compute::DplusA),
-            Statement::Sub => Self::compute2(Compute::AminD),
+            Statement::Add => Self::compute2(Compute::DplusM),
+            Statement::Sub => Self::compute2(Compute::MminD),
             Statement::Eq => Self::cmp(lg, Jump::JEQ),
             Statement::Lt => Self::cmp(lg, Jump::JLT),
             Statement::Gt => Self::cmp(lg, Jump::JGT),
