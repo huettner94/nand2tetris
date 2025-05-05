@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 use text::{inline_whitespace, newline};
 
-use super::{PushSource, Statement};
+use super::{PopDest, PushSource, Statement};
 
 fn int<'a>() -> impl Parser<'a, &'a str, u16> {
     text::int(10)
@@ -10,7 +10,7 @@ fn int<'a>() -> impl Parser<'a, &'a str, u16> {
         .boxed()
 }
 
-fn push<'a>() -> impl Parser<'a, &'a str, Statement> {
+fn push<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
     let source = choice((
         just("constant")
             .padded_by(inline_whitespace())
@@ -33,6 +33,9 @@ fn push<'a>() -> impl Parser<'a, &'a str, Statement> {
         just("pointer")
             .padded_by(inline_whitespace())
             .to(PushSource::Pointer),
+        just("static")
+            .padded_by(inline_whitespace())
+            .to(PushSource::Static(filename.to_string())),
     ));
 
     just("push")
@@ -43,7 +46,40 @@ fn push<'a>() -> impl Parser<'a, &'a str, Statement> {
         .boxed()
 }
 
-pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Statement>> {
+fn pop<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
+    let dest = choice((
+        just("local")
+            .padded_by(inline_whitespace())
+            .to(PopDest::Local),
+        just("argument")
+            .padded_by(inline_whitespace())
+            .to(PopDest::Argument),
+        just("this")
+            .padded_by(inline_whitespace())
+            .to(PopDest::This),
+        just("that")
+            .padded_by(inline_whitespace())
+            .to(PopDest::That),
+        just("temp")
+            .padded_by(inline_whitespace())
+            .to(PopDest::Temp),
+        just("pointer")
+            .padded_by(inline_whitespace())
+            .to(PopDest::Pointer),
+        just("static")
+            .padded_by(inline_whitespace())
+            .to(PopDest::Static(filename.to_string())),
+    ));
+
+    just("pop")
+        .padded_by(inline_whitespace())
+        .ignore_then(dest)
+        .then(int())
+        .map(|(d, n)| Statement::Pop(d, n))
+        .boxed()
+}
+
+pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
     let comment = just("//").then(any().and_is(newline().not()).repeated());
 
     let opt_comment_and_newline = comment.repeated().at_most(1).ignore_then(newline());
@@ -58,7 +94,8 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Statement>> {
         just("eq").to(Statement::Eq),
         just("lt").to(Statement::Lt),
         just("gt").to(Statement::Gt),
-        push(),
+        push(filename),
+        pop(filename),
     ));
 
     line.separated_by(opt_comment_and_newline.repeated())

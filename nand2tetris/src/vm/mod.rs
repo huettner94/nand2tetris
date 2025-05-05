@@ -62,7 +62,7 @@ impl VM {
             .map_err(|e| e.to_string())?
             .read_to_string(&mut stringbuf)
             .map_err(|e| e.to_string())?;
-        let out = parser::parser().parse(&stringbuf);
+        let out = parser::parser(path.file_name().unwrap().to_str().unwrap()).parse(&stringbuf);
         println!("Parse output: {:?}", out);
         if out.has_errors() {
             return Err(out.errors().map(|e| e.to_string()).collect());
