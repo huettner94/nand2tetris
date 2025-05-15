@@ -339,6 +339,9 @@ impl Statement {
             }
             Statement::Pop(PopDest::Temp, i) => Self::pop_fixed(&Self::temp_name(*i)),
             Statement::Pop(PopDest::Pointer, i) => Self::pop_fixed(&Self::pointer_name(*i)),
+            Statement::Label(_) => todo!(),
+            Statement::Goto(_) => todo!(),
+            Statement::IfGoto(_) => todo!(),
         }
     }
 }

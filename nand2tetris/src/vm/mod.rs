@@ -47,6 +47,10 @@ enum Statement {
 
     Push(PushSource, u16),
     Pop(PopDest, u16),
+
+    Label(String),
+    Goto(String),
+    IfGoto(String),
 }
 
 #[derive(Debug)]

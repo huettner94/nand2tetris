@@ -39,7 +39,6 @@ fn push<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
     ));
 
     just("push")
-        .padded_by(inline_whitespace())
         .ignore_then(source)
         .then(int())
         .map(|(s, n)| Statement::Push(s, n))
@@ -72,17 +71,40 @@ fn pop<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
     ));
 
     just("pop")
-        .padded_by(inline_whitespace())
         .ignore_then(dest)
         .then(int())
         .map(|(d, n)| Statement::Pop(d, n))
         .boxed()
 }
 
-pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
-    let comment = just("//").then(any().and_is(newline().not()).repeated());
+fn branching<'a>() -> impl Parser<'a, &'a str, Statement> {
+    let label = text::ident().map(|s: &str| s.to_string());
 
-    let opt_comment_and_newline = comment.repeated().at_most(1).ignore_then(newline());
+    choice((
+        just("label")
+            .padded_by(inline_whitespace())
+            .ignore_then(label)
+            .map(|label| Statement::Label(label)),
+        just("goto")
+            .padded_by(inline_whitespace())
+            .ignore_then(label)
+            .map(|label| Statement::Goto(label)),
+        just("if-goto")
+            .padded_by(inline_whitespace())
+            .ignore_then(label)
+            .map(|label| Statement::IfGoto(label)),
+    ))
+}
+
+pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
+    let comment =
+        inline_whitespace().ignore_then(just("//").then(any().and_is(newline().not()).repeated()));
+
+    let opt_comment_and_newline = comment
+        .repeated()
+        .at_most(1)
+        .ignore_then(newline())
+        .ignore_then(inline_whitespace());
 
     let line = choice((
         just("not").to(Statement::Not),
@@ -96,6 +118,7 @@ pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
         just("gt").to(Statement::Gt),
         push(filename),
         pop(filename),
+        branching(),
     ));
 
     line.separated_by(opt_comment_and_newline.repeated())
