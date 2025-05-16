@@ -1,10 +1,23 @@
 use chumsky::prelude::*;
 use text::{inline_whitespace, keyword, newline};
 
-use super::{PopDest, PushSource, Statement};
+use super::{Ast, Function, PopDest, PushSource, Statement};
 
 pub type Span = SimpleSpan;
 pub type Spanned<T> = (T, Span);
+
+fn nl<'a>() -> impl Parser<'a, &'a str, (), extra::Err<Rich<'a, char, Span>>> {
+    let comment =
+        inline_whitespace().ignore_then(just("//").then(any().and_is(newline().not()).repeated()));
+
+    let opt_comment_and_newline = comment
+        .repeated()
+        .at_most(1)
+        .ignore_then(newline())
+        .ignore_then(inline_whitespace());
+
+    opt_comment_and_newline.repeated()
+}
 
 fn int<'a>() -> impl Parser<'a, &'a str, u16, extra::Err<Rich<'a, char, Span>>> {
     text::int(10)
@@ -103,18 +116,9 @@ fn branching<'a>() -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, ch
     ))
 }
 
-pub fn parser<'a>(
+pub fn statements<'a>(
     filename: &str,
-) -> impl Parser<'a, &'a str, Vec<Spanned<Statement>>, extra::Err<Rich<'a, char, Span>>> {
-    let comment =
-        inline_whitespace().ignore_then(just("//").then(any().and_is(newline().not()).repeated()));
-
-    let opt_comment_and_newline = comment
-        .repeated()
-        .at_most(1)
-        .ignore_then(newline())
-        .ignore_then(inline_whitespace());
-
+) -> impl Parser<'a, &'a str, Vec<Statement>, extra::Err<Rich<'a, char, Span>>> {
     let line = choice((
         keyword("not").to(Statement::Not),
         keyword("and").to(Statement::And),
@@ -125,14 +129,47 @@ pub fn parser<'a>(
         keyword("eq").to(Statement::Eq),
         keyword("lt").to(Statement::Lt),
         keyword("gt").to(Statement::Gt),
+        keyword("return").to(Statement::Return),
         push(filename),
         pop(filename),
         branching(),
     ));
 
-    line.map_with(|tok, e| (tok, e.span()))
-        .padded_by(opt_comment_and_newline.repeated())
-        .recover_with(skip_then_retry_until(any().ignored(), end()))
-        .repeated()
-        .collect()
+    line.padded_by(nl()).repeated().collect()
+}
+
+pub fn functions<'a>(
+    filename: &str,
+) -> impl Parser<'a, &'a str, Vec<Function>, extra::Err<Rich<'a, char, Span>>> {
+    let name = text::ident()
+        .map(|s: &str| s.to_string())
+        .then_ignore(just('.'))
+        .then(text::ident().map(|s: &str| s.to_string()));
+
+    let function = keyword("function")
+        .padded_by(inline_whitespace())
+        .ignore_then(name)
+        .validate(|(funcfilename, funcname), span, emitter| {
+            if !filename.starts_with(&funcfilename) {
+                emitter.emit(Rich::custom(
+                    span.span(),
+                    format!(
+                        "Function name first part must match the filename. Found '{}'.",
+                        funcfilename
+                    ),
+                ));
+            }
+            format!("{}.{}", funcfilename, funcname)
+        })
+        .padded_by(inline_whitespace())
+        .then(int())
+        .padded_by(nl())
+        .then(statements(filename))
+        .map(|((name, locals), statements)| Function {
+            name,
+            locals,
+            statements,
+        });
+
+    function.padded_by(nl()).repeated().collect()
 }

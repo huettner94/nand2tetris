@@ -53,11 +53,26 @@ enum Statement {
     Label(String),
     Goto(String),
     IfGoto(String),
+
+    Return,
+}
+
+#[derive(Debug, Clone)]
+struct Function {
+    name: String,
+    locals: u16,
+    statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+enum Ast {
+    Statements(Vec<Statement>),
+    SingleFile(Vec<Function>),
 }
 
 #[derive(Debug)]
 pub struct VM {
-    ast: Vec<Statement>,
+    ast: Ast,
     label_generator: LabelGenerator,
 }
 
@@ -69,9 +84,20 @@ impl VM {
             .read_to_string(&mut src)
             .map_err(|e| e.to_string())?;
         let src2 = src.clone();
-        let (out, errs) = parser::parser(path.file_name().unwrap().to_str().unwrap())
-            .parse(&src2)
-            .into_output_errors();
+        let (out, errs) = match src.contains("function ") {
+            false => {
+                let (out, errs) = parser::statements(path.file_name().unwrap().to_str().unwrap())
+                    .parse(&src2)
+                    .into_output_errors();
+                (out.map(|s| Ast::Statements(s)), errs)
+            }
+            true => {
+                let (out, errs) = parser::functions(path.file_name().unwrap().to_str().unwrap())
+                    .parse(&src2)
+                    .into_output_errors();
+                (out.map(|f| Ast::SingleFile(f)), errs)
+            }
+        };
         println!("Parse output: {:?}", out);
         if !errs.is_empty() {
             let filename = path.to_str().unwrap().to_string();
@@ -79,7 +105,7 @@ impl VM {
             return Err("Failed to compile".to_string());
         }
         Ok(VM {
-            ast: out.unwrap().into_iter().map(|(s, _)| s).collect(),
+            ast: out.unwrap(),
             label_generator: LabelGenerator::new(path),
         })
     }
@@ -111,7 +137,11 @@ impl VM {
         let mut out = Vec::new();
 
         let mut labels = HashSet::new();
-        for s in &self.ast {
+        let statementiter: Box<dyn Iterator<Item = &Statement>> = match &self.ast {
+            Ast::Statements(s) => Box::new(s.iter()),
+            Ast::SingleFile(f) => Box::new(f.iter().map(|f| f.statements.iter()).flatten()),
+        };
+        for s in statementiter {
             if let Statement::Label(l) = s {
                 if labels.contains(&l) {
                     return Err(format!("Duplicate Label definition '{}'", l));
@@ -120,8 +150,13 @@ impl VM {
             }
         }
 
-        for statement in self.ast {
-            out.append(&mut statement.compile(&mut self.label_generator));
+        match self.ast {
+            Ast::Statements(statements) => {
+                for statement in statements {
+                    out.append(&mut statement.compile(&mut self.label_generator));
+                }
+            }
+            Ast::SingleFile(vec) => todo!(),
         }
 
         Ok(CodeType::Assembly(Assembly::from_instructions(out)))
