@@ -3,14 +3,19 @@ use text::{inline_whitespace, newline};
 
 use super::{PopDest, PushSource, Statement};
 
-fn int<'a>() -> impl Parser<'a, &'a str, u16> {
+pub type Span = SimpleSpan;
+pub type Spanned<T> = (T, Span);
+
+fn int<'a>() -> impl Parser<'a, &'a str, u16, extra::Err<Rich<'a, char, Span>>> {
     text::int(10)
         .padded_by(inline_whitespace())
         .map(|s: &str| u16::from_str_radix(s, 10).unwrap())
         .boxed()
 }
 
-fn push<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
+fn push<'a>(
+    filename: &str,
+) -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, char, Span>>> {
     let source = choice((
         just("constant")
             .padded_by(inline_whitespace())
@@ -45,7 +50,9 @@ fn push<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
         .boxed()
 }
 
-fn pop<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
+fn pop<'a>(
+    filename: &str,
+) -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, char, Span>>> {
     let dest = choice((
         just("local")
             .padded_by(inline_whitespace())
@@ -77,7 +84,7 @@ fn pop<'a>(filename: &str) -> impl Parser<'a, &'a str, Statement> {
         .boxed()
 }
 
-fn branching<'a>() -> impl Parser<'a, &'a str, Statement> {
+fn branching<'a>() -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, char, Span>>> {
     let label = text::ident().map(|s: &str| s.to_string());
 
     choice((
@@ -96,7 +103,9 @@ fn branching<'a>() -> impl Parser<'a, &'a str, Statement> {
     ))
 }
 
-pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
+pub fn parser<'a>(
+    filename: &str,
+) -> impl Parser<'a, &'a str, Vec<Spanned<Statement>>, extra::Err<Rich<'a, char, Span>>> {
     let comment =
         inline_whitespace().ignore_then(just("//").then(any().and_is(newline().not()).repeated()));
 
@@ -121,8 +130,9 @@ pub fn parser<'a>(filename: &str) -> impl Parser<'a, &'a str, Vec<Statement>> {
         branching(),
     ));
 
-    line.separated_by(opt_comment_and_newline.repeated())
-        .allow_trailing()
-        .allow_leading()
+    line.map_with(|tok, e| (tok, e.span()))
+        .padded_by(opt_comment_and_newline.repeated())
+        .recover_with(skip_then_retry_until(any().ignored(), end()))
+        .repeated()
         .collect()
 }
