@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use text::{inline_whitespace, newline};
+use text::{inline_whitespace, keyword, newline};
 
 use super::{PopDest, PushSource, Statement};
 
@@ -17,33 +17,33 @@ fn push<'a>(
     filename: &str,
 ) -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, char, Span>>> {
     let source = choice((
-        just("constant")
+        keyword("constant")
             .padded_by(inline_whitespace())
             .to(PushSource::Constant),
-        just("local")
+        keyword("local")
             .padded_by(inline_whitespace())
             .to(PushSource::Local),
-        just("argument")
+        keyword("argument")
             .padded_by(inline_whitespace())
             .to(PushSource::Argument),
-        just("this")
+        keyword("this")
             .padded_by(inline_whitespace())
             .to(PushSource::This),
-        just("that")
+        keyword("that")
             .padded_by(inline_whitespace())
             .to(PushSource::That),
-        just("temp")
+        keyword("temp")
             .padded_by(inline_whitespace())
             .to(PushSource::Temp),
-        just("pointer")
+        keyword("pointer")
             .padded_by(inline_whitespace())
             .to(PushSource::Pointer),
-        just("static")
+        keyword("static")
             .padded_by(inline_whitespace())
             .to(PushSource::Static(filename.to_string())),
     ));
 
-    just("push")
+    keyword("push")
         .ignore_then(source)
         .then(int())
         .map(|(s, n)| Statement::Push(s, n))
@@ -54,30 +54,30 @@ fn pop<'a>(
     filename: &str,
 ) -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, char, Span>>> {
     let dest = choice((
-        just("local")
+        keyword("local")
             .padded_by(inline_whitespace())
             .to(PopDest::Local),
-        just("argument")
+        keyword("argument")
             .padded_by(inline_whitespace())
             .to(PopDest::Argument),
-        just("this")
+        keyword("this")
             .padded_by(inline_whitespace())
             .to(PopDest::This),
-        just("that")
+        keyword("that")
             .padded_by(inline_whitespace())
             .to(PopDest::That),
-        just("temp")
+        keyword("temp")
             .padded_by(inline_whitespace())
             .to(PopDest::Temp),
-        just("pointer")
+        keyword("pointer")
             .padded_by(inline_whitespace())
             .to(PopDest::Pointer),
-        just("static")
+        keyword("static")
             .padded_by(inline_whitespace())
             .to(PopDest::Static(filename.to_string())),
     ));
 
-    just("pop")
+    keyword("pop")
         .ignore_then(dest)
         .then(int())
         .map(|(d, n)| Statement::Pop(d, n))
@@ -88,11 +88,11 @@ fn branching<'a>() -> impl Parser<'a, &'a str, Statement, extra::Err<Rich<'a, ch
     let label = text::ident().map(|s: &str| s.to_string());
 
     choice((
-        just("label")
+        keyword("label")
             .padded_by(inline_whitespace())
             .ignore_then(label)
             .map(|label| Statement::Label(label)),
-        just("goto")
+        keyword("goto")
             .padded_by(inline_whitespace())
             .ignore_then(label)
             .map(|label| Statement::Goto(label)),
@@ -116,15 +116,15 @@ pub fn parser<'a>(
         .ignore_then(inline_whitespace());
 
     let line = choice((
-        just("not").to(Statement::Not),
-        just("and").to(Statement::And),
-        just("or").to(Statement::Or),
-        just("neg").to(Statement::Neg),
-        just("add").to(Statement::Add),
-        just("sub").to(Statement::Sub),
-        just("eq").to(Statement::Eq),
-        just("lt").to(Statement::Lt),
-        just("gt").to(Statement::Gt),
+        keyword("not").to(Statement::Not),
+        keyword("and").to(Statement::And),
+        keyword("or").to(Statement::Or),
+        keyword("neg").to(Statement::Neg),
+        keyword("add").to(Statement::Add),
+        keyword("sub").to(Statement::Sub),
+        keyword("eq").to(Statement::Eq),
+        keyword("lt").to(Statement::Lt),
+        keyword("gt").to(Statement::Gt),
         push(filename),
         pop(filename),
         branching(),
