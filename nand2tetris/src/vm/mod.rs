@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{collections::HashSet, fs::File, io::Read, path::PathBuf};
 
 use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::{Parser, error::Rich};
@@ -109,6 +109,16 @@ impl VM {
 
     pub fn compile(mut self) -> Result<CodeType, String> {
         let mut out = Vec::new();
+
+        let mut labels = HashSet::new();
+        for s in &self.ast {
+            if let Statement::Label(l) = s {
+                if labels.contains(&l) {
+                    return Err(format!("Duplicate Label definition '{}'", l));
+                }
+                labels.insert(l);
+            }
+        }
 
         for statement in self.ast {
             out.append(&mut statement.compile(&mut self.label_generator));

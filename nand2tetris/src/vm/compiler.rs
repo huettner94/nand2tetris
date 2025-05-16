@@ -7,7 +7,6 @@ use super::{PopDest, PushSource, Statement};
 #[derive(Debug)]
 pub struct LabelGenerator {
     filename: String,
-    last_var: u16,
     last_statement: u16,
 }
 
@@ -15,7 +14,6 @@ impl LabelGenerator {
     pub fn new(filename: &PathBuf) -> Self {
         LabelGenerator {
             filename: filename.to_str().unwrap().to_string(),
-            last_var: 0,
             last_statement: 0,
         }
     }
@@ -339,9 +337,32 @@ impl Statement {
             }
             Statement::Pop(PopDest::Temp, i) => Self::pop_fixed(&Self::temp_name(*i)),
             Statement::Pop(PopDest::Pointer, i) => Self::pop_fixed(&Self::pointer_name(*i)),
-            Statement::Label(_) => todo!(),
-            Statement::Goto(_) => todo!(),
-            Statement::IfGoto(_) => todo!(),
+            Statement::Label(l) => [Instruction::Label { label: l.clone() }].to_vec(),
+            Statement::Goto(l) => [
+                Instruction::Load {
+                    data: LoadData::Label(l.clone()),
+                },
+                Instruction::Command {
+                    compute: Compute::Zero,
+                    target: Target::empty(),
+                    jump: Jump::JMP,
+                },
+            ]
+            .to_vec(),
+            Statement::IfGoto(l) => {
+                let mut out = Self::pop(Target::D);
+                out.extend([
+                    Instruction::Load {
+                        data: LoadData::Label(l.clone()),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::empty(),
+                        jump: Jump::JNE,
+                    },
+                ]);
+                out
+            }
         }
     }
 }
