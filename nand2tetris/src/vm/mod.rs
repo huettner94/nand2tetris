@@ -156,7 +156,11 @@ impl VM {
                     out.append(&mut statement.compile(&mut self.label_generator));
                 }
             }
-            Ast::SingleFile(vec) => todo!(),
+            Ast::SingleFile(functions) => {
+                for function in functions {
+                    out.append(&mut function.compile(&mut self.label_generator));
+                }
+            }
         }
 
         Ok(CodeType::Assembly(Assembly::from_instructions(out)))

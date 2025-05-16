@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::assembly::{Compute, Instruction, Jump, LoadData, Target};
 
-use super::{PopDest, PushSource, Statement};
+use super::{Function, PopDest, PushSource, Statement};
 
 #[derive(Debug)]
 pub struct LabelGenerator {
@@ -340,7 +340,7 @@ impl Statement {
             Statement::Label(l) => [Instruction::Label { label: l.clone() }].to_vec(),
             Statement::Goto(l) => [
                 Instruction::Load {
-                    data: LoadData::Label(l.clone()),
+                    data: LoadData::label(l),
                 },
                 Instruction::Command {
                     compute: Compute::Zero,
@@ -353,7 +353,7 @@ impl Statement {
                 let mut out = Self::pop(Target::D);
                 out.extend([
                     Instruction::Load {
-                        data: LoadData::Label(l.clone()),
+                        data: LoadData::label(l),
                     },
                     Instruction::Command {
                         compute: Compute::D,
@@ -363,7 +363,186 @@ impl Statement {
                 ]);
                 out
             }
-            Statement::Return => todo!(),
+            Statement::Return => {
+                // Move the return value on the stack to ARG[0] which will be top of stack later
+                let mut out = Self::pop_common("ARG", 0);
+                out.extend([
+                    // Reset the top of the stack to be at current ARG[1]
+                    Instruction::Load {
+                        data: LoadData::label("ARG"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MplusOne,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Load {
+                        data: LoadData::label("SP"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Restore Segment Pointers R14 is scratch memory of current recovery pointer
+                    Instruction::Load {
+                        data: LoadData::label("LCL"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MminOne,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    // D now contains the "saved THAT" address. we save it first in R14 before
+                    // continuing
+                    Instruction::Load {
+                        data: LoadData::label("R14"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::A | Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Now restore THAT
+                    Instruction::Command {
+                        compute: Compute::M,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Load {
+                        data: LoadData::label("THAT"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Now the same for "saved THIS" which is -1 again.
+                    Instruction::Load {
+                        data: LoadData::label("R14"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MminOne,
+                        target: Target::A | Target::M,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Command {
+                        compute: Compute::M,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Load {
+                        data: LoadData::label("THIS"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Now the same for "saved ARG" which is -1 again.
+                    Instruction::Load {
+                        data: LoadData::label("R14"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MminOne,
+                        target: Target::A | Target::M,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Command {
+                        compute: Compute::M,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Load {
+                        data: LoadData::label("ARG"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Now the same for "saved LCL" which is -1 again.
+                    Instruction::Load {
+                        data: LoadData::label("R14"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MminOne,
+                        target: Target::A | Target::M,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Command {
+                        compute: Compute::M,
+                        target: Target::D,
+                        jump: Jump::NONE,
+                    },
+                    Instruction::Load {
+                        data: LoadData::label("LCL"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::D,
+                        target: Target::M,
+                        jump: Jump::NONE,
+                    },
+                    // Now the next -1 is the return address that we should jump to
+                    Instruction::Load {
+                        data: LoadData::label("R14"),
+                    },
+                    Instruction::Command {
+                        compute: Compute::MminOne,
+                        target: Target::A,
+                        jump: Jump::NONE,
+                    },
+                    // A now contains the address of the return address
+                    Instruction::Command {
+                        compute: Compute::M,
+                        target: Target::A,
+                        jump: Jump::JMP,
+                    },
+                ]);
+                out
+            }
         }
+    }
+}
+
+impl Function {
+    fn function_label(name: &str) -> String {
+        format!("function:{}", name)
+    }
+
+    pub fn compile(&self, lg: &mut LabelGenerator) -> Vec<Instruction> {
+        let mut out = [
+            Instruction::Label {
+                label: Self::function_label(&self.name),
+            },
+            Instruction::Load {
+                data: LoadData::label("LCL"),
+            },
+            Instruction::Command {
+                compute: Compute::M,
+                target: Target::A,
+                jump: Jump::NONE,
+            },
+        ]
+        .to_vec();
+        for _ in 0..self.locals {
+            out.extend([
+                Instruction::Command {
+                    compute: Compute::Zero,
+                    target: Target::M,
+                    jump: Jump::NONE,
+                },
+                Instruction::Command {
+                    compute: Compute::AplusOne,
+                    target: Target::A,
+                    jump: Jump::NONE,
+                },
+            ]);
+        }
+
+        for statement in &self.statements {
+            out.append(&mut statement.compile(lg));
+        }
+        out
     }
 }
