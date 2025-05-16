@@ -1,10 +1,9 @@
 use chumsky::prelude::*;
 use text::{inline_whitespace, keyword, newline};
 
-use super::{Ast, Function, PopDest, PushSource, Statement};
+use super::{Function, PopDest, PushSource, Statement};
 
 pub type Span = SimpleSpan;
-pub type Spanned<T> = (T, Span);
 
 fn nl<'a>() -> impl Parser<'a, &'a str, (), extra::Err<Rich<'a, char, Span>>> {
     let comment =
